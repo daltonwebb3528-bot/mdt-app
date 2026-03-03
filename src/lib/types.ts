@@ -66,13 +66,7 @@ export interface LprRead {
   imageUrl: string;
 }
 
-export interface Tab {
-  id: string;
-  type: "map" | "vms" | "alert" | "plate-search" | "person-search" | "phone-search" | "address-search";
-  title: string;
-  data?: Alert | Vehicle | Person;
-}
-
+// Search result types
 export interface PlateSearchResult {
   vehicle: Vehicle | null;
   owner: Person | null;
@@ -82,6 +76,72 @@ export interface PlateSearchResult {
 
 export interface PersonSearchResult {
   persons: Person[];
+}
+
+export interface PhoneSearchResult {
+  phone: string;
+  carrier: string;
+  lineType: string;
+  registeredName: string;
+  registeredAddress: string;
+  accountStatus: string;
+  accountAge: string;
+  associatedPersons: Array<{ name: string; relationship: string; dob: string }>;
+  callHistory: Array<{ date: string; type: string; duration: string; otherNumber: string }>;
+  priorIncidents: Array<{ date: string; type: string; caseNumber: string }>;
+  aiSummary: string;
+}
+
+export interface AddressSearchResult {
+  address: string;
+  normalizedAddress: string;
+  propertyType: string;
+  propertyOwner: string;
+  yearBuilt: number;
+  sqft: number;
+  bedrooms: number;
+  bathrooms: number;
+  assessedValue: string;
+  residents: Array<{
+    name: string;
+    relationship: string;
+    dob: string;
+    hasWarrants: boolean;
+    warrantType?: string;
+  }>;
+  registeredVehicles: Array<{
+    plate: string;
+    make: string;
+    model: string;
+    year: number;
+    color: string;
+  }>;
+  priorCalls: Array<{
+    date: string;
+    type: string;
+    disposition: string;
+    caseNumber: string;
+  }>;
+  totalCallsLast2Years: number;
+  officerSafetyAlerts: string[];
+  aiSummary: string;
+}
+
+// Tab data can be an alert, or any search result type
+export type TabData = 
+  | Alert 
+  | Vehicle 
+  | Person 
+  | PlateSearchResult 
+  | PersonSearchResult 
+  | PhoneSearchResult 
+  | AddressSearchResult;
+
+export interface Tab {
+  id: string;
+  type: "map" | "vms" | "alert" | "plate-search" | "person-search" | "phone-search" | "address-search";
+  title: string;
+  data?: TabData;
 }
 
 export interface User {

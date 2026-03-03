@@ -1,10 +1,10 @@
 "use client";
 
-import type { Person } from "@/lib/types";
+import type { Person, PersonSearchResult } from "@/lib/types";
 import { useTabStore } from "@/stores/tabStore";
 
 interface PersonResultsProps {
-  data: { persons: Person[] };
+  data: PersonSearchResult;
 }
 
 export function PersonResults({ data }: PersonResultsProps) {
@@ -29,7 +29,7 @@ export function PersonResults({ data }: PersonResultsProps) {
       id: `person-${Date.now()}`,
       type: "person-search",
       title: `Person: ${person.firstName} ${person.lastName}`,
-      data: { persons: [person] },
+      data: { persons: [person] } as PersonSearchResult,
     });
   };
 
@@ -71,7 +71,7 @@ export function PersonResults({ data }: PersonResultsProps) {
           <div className="grid grid-cols-2 gap-1 mt-2 text-xs">
             <div className="bg-mdt-bg rounded p-1">
               <p className="text-[10px] text-mdt-muted">HT</p>
-              <p className="font-bold">5'10"</p>
+              <p className="font-bold">5&#39;10&#34;</p>
             </div>
             <div className="bg-mdt-bg rounded p-1">
               <p className="text-[10px] text-mdt-muted">WT</p>
