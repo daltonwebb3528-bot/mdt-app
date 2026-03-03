@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { PlateSearchResult } from "@/lib/types";
 import { useTabStore } from "@/stores/tabStore";
+import type { PlateSearchResult, PersonSearchResult } from "@/lib/types";
 
 // Dynamically import map component to avoid SSR issues
 const LprHeatMap = dynamic(() => import("./LprHeatMap").then((mod) => mod.LprHeatMap), {
@@ -25,8 +26,8 @@ export function PlateResults({ data }: PlateResultsProps) {
   const { vehicle, owner, lprHistory, aiSummary } = data;
   const { addTab } = useTabStore();
   const isStolen = vehicle?.ncicStatus?.stolen;
-  const hasWarrant = owner?.ncicStatus?.warrants?.length > 0;
-  const hasAlerts = owner?.ncicStatus?.alerts?.length > 0;
+  const hasWarrant = (owner?.ncicStatus?.warrants?.length ?? 0) > 0;
+  const hasAlerts = (owner?.ncicStatus?.alerts?.length ?? 0) > 0;
 
   // Group LPR reads by date
   const groupedReads = lprHistory?.reduce((groups, read) => {
@@ -47,7 +48,7 @@ export function PlateResults({ data }: PlateResultsProps) {
         id: `person-${Date.now()}`,
         type: "person-search",
         title: `Person: ${owner.firstName} ${owner.lastName}`,
-        data: { persons: [owner] },
+        data: { persons: [owner] } as PersonSearchResult,
       });
     }
   };
