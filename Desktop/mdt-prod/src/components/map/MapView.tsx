@@ -6,7 +6,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useAlertStore } from "@/stores/alertStore";
 import { useTabStore } from "@/stores/tabStore";
 
-const priorityColors = {
+const priorityColors: Record<number, string> = {
+  0: "#dc2626",
   1: "#ef4444",
   2: "#f97316",
   3: "#eab308",
