@@ -2,6 +2,51 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
+// Web Speech API types
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message?: string;
+}
+
+interface ISpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface IWindow extends Window {
+  SpeechRecognition?: new () => ISpeechRecognition;
+  webkitSpeechRecognition?: new () => ISpeechRecognition;
+}
+
 interface VoiceCommand {
   action: "plate" | "person" | "phone" | "address" | "read" | "unknown";
   query: string;
@@ -23,65 +68,7 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const wakeWordRecognitionRef = useRef<SpeechRecognition | null>(null);
-
-  // Initialize wake word detection using Web Speech API
-  useEffect(() => {
-    if (!wakeWordEnabled) return;
-    
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("Speech recognition not supported");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      const last = event.results.length - 1;
-      const transcript = event.results[last][0].transcript.toLowerCase();
-      
-      // Check for wake word
-      if (transcript.includes("hey flocky") || transcript.includes("hey blocky") || transcript.includes("hey flock")) {
-        setIsWakeWordActive(true);
-        setStatus("Listening...");
-        recognition.stop();
-        startRecording();
-      }
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error !== "no-speech") {
-        console.error("Wake word error:", event.error);
-      }
-    };
-
-    recognition.onend = () => {
-      // Restart wake word detection if not actively listening
-      if (wakeWordEnabled && !isListening && !isWakeWordActive) {
-        try {
-          recognition.start();
-        } catch (e) {
-          // Already started
-        }
-      }
-    };
-
-    wakeWordRecognitionRef.current = recognition;
-    
-    try {
-      recognition.start();
-    } catch (e) {
-      console.error("Failed to start wake word detection:", e);
-    }
-
-    return () => {
-      recognition.stop();
-    };
-  }, [wakeWordEnabled, isListening, isWakeWordActive]);
+  const wakeWordRecognitionRef = useRef<ISpeechRecognition | null>(null);
 
   const startRecording = useCallback(async () => {
     try {
@@ -102,7 +89,6 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         await processAudio(audioBlob);
         
-        // Clean up stream
         stream.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       };
@@ -112,7 +98,6 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
       onListeningChange?.(true);
       setStatus("Listening...");
 
-      // Auto-stop after 5 seconds
       setTimeout(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           stopRecording();
@@ -166,13 +151,12 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
     } finally {
       setIsProcessing(false);
       
-      // Restart wake word detection
       setTimeout(() => {
         setStatus("");
         if (wakeWordEnabled && wakeWordRecognitionRef.current) {
           try {
             wakeWordRecognitionRef.current.start();
-          } catch (e) {
+          } catch {
             // Already running
           }
         }
@@ -180,11 +164,68 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
     }
   };
 
+  // Initialize wake word detection using Web Speech API
+  useEffect(() => {
+    if (!wakeWordEnabled) return;
+    
+    const windowWithSpeech = window as IWindow;
+    const SpeechRecognitionClass = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
+    
+    if (!SpeechRecognitionClass) {
+      console.warn("Speech recognition not supported");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionClass();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const last = event.results.length - 1;
+      const transcript = event.results[last][0].transcript.toLowerCase();
+      
+      if (transcript.includes("hey flocky") || transcript.includes("hey blocky") || transcript.includes("hey flock")) {
+        setIsWakeWordActive(true);
+        setStatus("Listening...");
+        recognition.stop();
+        startRecording();
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (event.error !== "no-speech") {
+        console.error("Wake word error:", event.error);
+      }
+    };
+
+    recognition.onend = () => {
+      if (wakeWordEnabled && !isListening && !isWakeWordActive) {
+        try {
+          recognition.start();
+        } catch {
+          // Already started
+        }
+      }
+    };
+
+    wakeWordRecognitionRef.current = recognition;
+    
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error("Failed to start wake word detection:", e);
+    }
+
+    return () => {
+      recognition.stop();
+    };
+  }, [wakeWordEnabled, isListening, isWakeWordActive, startRecording]);
+
   const handleMicClick = () => {
     if (isListening) {
       stopRecording();
     } else {
-      // Stop wake word detection while manually recording
       wakeWordRecognitionRef.current?.stop();
       startRecording();
     }
@@ -307,13 +348,5 @@ export async function speakSummary(type: string, data: unknown): Promise<void> {
     await speakText(summary);
   } catch (error) {
     console.error("Summary error:", error);
-  }
-}
-
-// Add type declaration for Web Speech API
-declare global {
-  interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
   }
 }
