@@ -56,7 +56,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
 
   const callerPhone = rawData.callerPhone as string || "480-555-1234";
 
-  // Store AI data in state to prevent regeneration
+  // Store AI data in state
   const [aiData, setAiData] = useState<{
     calls: number;
     high: boolean;
@@ -85,8 +85,23 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
     }
   };
 
-  const loadAi = useCallback(() => {
-    if (aiLoading || aiLoaded) return;
+  const loadAi = useCallback((fromVoice = false) => {
+    if (aiLoading || aiLoaded) {
+      // If already loaded and triggered by voice, just speak the summary
+      if (fromVoice && aiData) {
+        const summaryData = {
+          callType: alert.title,
+          location: alert.locationAddr,
+          riskLevel: risk.level,
+          priorCalls: aiData.calls,
+          highActivity: aiData.high,
+          residents: aiData.residents,
+          callerName: aiData.callerInfo.name,
+        };
+        speakSummary("cad", summaryData);
+      }
+      return;
+    }
     
     setAiLoading(true);
     setTimeout(() => {
@@ -125,26 +140,28 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
       setAiLoading(false);
       setAiLoaded(true);
       
-      // Speak summary after analysis completes
-      const summaryData = {
-        callType: alert.title,
-        location: alert.locationAddr,
-        riskLevel: risk.level,
-        priorCalls: ai.calls,
-        highActivity: ai.high,
-        residents: ai.residents,
-        callerName: ai.callerInfo.name,
-      };
-      speakSummary("cad", summaryData);
+      // Only speak if triggered by voice command
+      if (fromVoice) {
+        const summaryData = {
+          callType: alert.title,
+          location: alert.locationAddr,
+          riskLevel: risk.level,
+          priorCalls: ai.calls,
+          highActivity: ai.high,
+          residents: ai.residents,
+          callerName: ai.callerInfo.name,
+        };
+        speakSummary("cad", summaryData);
+      }
       
     }, 800);
-  }, [aiLoading, aiLoaded, alert.title, alert.locationAddr, risk.level]);
+  }, [aiLoading, aiLoaded, aiData, alert.title, alert.locationAddr, risk.level]);
 
   // Listen for voice commands
   useEffect(() => {
     const unsubscribe = voiceEvents.on((command) => {
       if (command === "run-analysis") {
-        loadAi();
+        loadAi(true); // true = from voice, should speak
       }
     });
     return unsubscribe;
@@ -233,7 +250,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
           <div className="bg-mdt-panel px-3 py-2 border-b border-mdt-border flex items-center justify-between">
             <span className="font-bold text-mdt-info">🤖 Analysis</span>
             {!aiLoaded && (
-              <button onClick={loadAi} disabled={aiLoading} className="px-3 py-1 bg-mdt-info text-black font-bold rounded text-xs">
+              <button onClick={() => loadAi(false)} disabled={aiLoading} className="px-3 py-1 bg-mdt-info text-black font-bold rounded text-xs">
                 {aiLoading ? "⏳ Running..." : "▶ Run Analysis"}
               </button>
             )}

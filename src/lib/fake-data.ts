@@ -32,10 +32,9 @@ const COLORS = ["Black", "White", "Silver", "Gray", "Red", "Blue", "Green", "Bro
 const WARRANT_TYPES = ["Felony Warrant", "Misdemeanor Warrant", "Bench Warrant", "Failure to Appear"];
 const FLAGS = ["Gang Member", "Armed & Dangerous", "Mental Health", "Prior Violence", "Felony History", "Drug History", "DV History"];
 
-export function generatePerson(seed: string) {
+// Generate person with specific name (for voice search)
+export function generatePersonWithName(seed: string, firstName: string, lastName: string) {
   const rand = seededRandom(seed);
-  const firstName = FIRST_NAMES[Math.floor(rand() * FIRST_NAMES.length)];
-  const lastName = LAST_NAMES[Math.floor(rand() * LAST_NAMES.length)];
   const street = STREETS[Math.floor(rand() * STREETS.length)];
   const city = CITIES[Math.floor(rand() * CITIES.length)];
   const hasWarrant = rand() < 0.15;
@@ -55,8 +54,8 @@ export function generatePerson(seed: string) {
 
   return {
     id: `person-${seed}`,
-    firstName,
-    lastName,
+    firstName: firstName.toUpperCase(),
+    lastName: lastName.toUpperCase(),
     dob: `${String(Math.floor(rand() * 12) + 1).padStart(2, "0")}/${String(Math.floor(rand() * 28) + 1).padStart(2, "0")}/${1960 + Math.floor(rand() * 45)}`,
     dlNumber: `D${String(Math.floor(rand() * 90000000) + 10000000)}`,
     dlState: "AZ",
@@ -66,8 +65,15 @@ export function generatePerson(seed: string) {
       alerts: rand() < 0.1 ? ["Person of Interest - Case #2024-" + Math.floor(rand() * 9999)] : [],
     },
     flags,
-    aiSummary: `${firstName} ${lastName} has ${warrants.length > 0 ? "active warrants" : "no active warrants"}. ${flags.length > 0 ? `Flagged: ${flags.join(", ")}.` : "No flags on file."}`,
+    aiSummary: `${firstName.toUpperCase()} ${lastName.toUpperCase()} has ${warrants.length > 0 ? "active warrants" : "no active warrants"}. ${flags.length > 0 ? `Flagged: ${flags.join(", ")}.` : "No flags on file."}`,
   };
+}
+
+export function generatePerson(seed: string) {
+  const rand = seededRandom(seed);
+  const firstName = FIRST_NAMES[Math.floor(rand() * FIRST_NAMES.length)];
+  const lastName = LAST_NAMES[Math.floor(rand() * LAST_NAMES.length)];
+  return generatePersonWithName(seed, firstName, lastName);
 }
 
 export function generateVehicle(plate: string) {

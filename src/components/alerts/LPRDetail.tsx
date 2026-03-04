@@ -46,7 +46,7 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
     timestamp: new Date(alert.createdAt).toLocaleString(),
   };
 
-  // AI Analysis data - memoize to prevent regeneration
+  // AI Analysis data
   const [aiData, setAiData] = useState<{
     ncic: {
       vehicleStatus: string;
@@ -71,8 +71,21 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
     associates: Array<{ name: string; relation: string; flags: string[] }>;
   } | null>(null);
 
-  const loadAi = useCallback(() => {
-    if (aiLoading || aiLoaded) return;
+  const loadAi = useCallback((fromVoice = false) => {
+    if (aiLoading || aiLoaded) {
+      // If already loaded and triggered by voice, just speak the summary
+      if (fromVoice && aiData) {
+        const summaryData = {
+          plate: rawData.plate,
+          vehicleStatus: aiData.ncic.vehicleStatus,
+          owner: aiData.owner,
+          hotlistReason: hotlistData.reason,
+          vehicle: `${hotlistData.color} ${hotlistData.make} ${hotlistData.body}`,
+        };
+        speakSummary("lpr", summaryData);
+      }
+      return;
+    }
     
     setAiLoading(true);
     setTimeout(() => {
@@ -118,24 +131,26 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
       setAiLoading(false);
       setAiLoaded(true);
       
-      // Speak summary after analysis completes
-      const summaryData = {
-        plate: rawData.plate,
-        vehicleStatus: ai.ncic.vehicleStatus,
-        owner: ai.owner,
-        hotlistReason: hotlistData.reason,
-        vehicle: `${hotlistData.color} ${hotlistData.make} ${hotlistData.body}`,
-      };
-      speakSummary("lpr", summaryData);
+      // Only speak if triggered by voice command
+      if (fromVoice) {
+        const summaryData = {
+          plate: rawData.plate,
+          vehicleStatus: ai.ncic.vehicleStatus,
+          owner: ai.owner,
+          hotlistReason: hotlistData.reason,
+          vehicle: `${hotlistData.color} ${hotlistData.make} ${hotlistData.body}`,
+        };
+        speakSummary("lpr", summaryData);
+      }
       
     }, 1200);
-  }, [aiLoading, aiLoaded, isStolen, alert.createdAt, alert.locationAddr, rawData.camera, rawData.plate, hotlistData.reason, hotlistData.color, hotlistData.make, hotlistData.body]);
+  }, [aiLoading, aiLoaded, aiData, isStolen, alert.createdAt, alert.locationAddr, rawData.camera, rawData.plate, hotlistData.reason, hotlistData.color, hotlistData.make, hotlistData.body]);
 
   // Listen for voice commands
   useEffect(() => {
     const unsubscribe = voiceEvents.on((command) => {
       if (command === "run-analysis") {
-        loadAi();
+        loadAi(true); // true = from voice, should speak
       }
     });
     return unsubscribe;
@@ -149,19 +164,6 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
           id: `person-${Date.now()}`,
           type: "person-search",
           title: name,
-          data,
-        });
-      });
-  };
-
-  const searchPlate = (plate: string) => {
-    fetch(`/api/search/plate?q=${encodeURIComponent(plate)}`)
-      .then(r => r.json())
-      .then(data => {
-        addChildTab(alertTabId, {
-          id: `plate-${plate}`,
-          type: "plate-search",
-          title: plate,
           data,
         });
       });
@@ -246,7 +248,7 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
           <div className="bg-mdt-panel px-3 py-2 border-b border-mdt-border flex items-center justify-between">
             <span className="font-bold text-mdt-info">🤖 AI Analysis</span>
             {!aiLoaded && (
-              <button onClick={loadAi} disabled={aiLoading} className="px-3 py-1 bg-mdt-info text-black font-bold rounded text-xs">
+              <button onClick={() => loadAi(false)} disabled={aiLoading} className="px-3 py-1 bg-mdt-info text-black font-bold rounded text-xs">
                 {aiLoading ? "⏳ Running..." : "▶ Run NCIC"}
               </button>
             )}
