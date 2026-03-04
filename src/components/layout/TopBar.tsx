@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTabStore } from "@/stores/tabStore";
 import { useAlertStore } from "@/stores/alertStore";
-import { VoiceControl, speakSummary, voiceEvents } from "@/components/voice/VoiceControl";
+import { VoiceControl, speakSummaryWithQuery, voiceEvents } from "@/components/voice/VoiceControl";
 import type { PlateSearchResult, PersonSearchResult } from "@/lib/types";
 
 type OtherSearchType = "phone" | "address" | "ssn" | "vin";
@@ -32,7 +32,7 @@ export function TopBar() {
     }
   }, []);
 
-  const handlePlateSearch = async (query?: string) => {
+  const handlePlateSearch = async (query?: string, fromVoice = false) => {
     const searchQuery = query || plateQuery.trim();
     if (!searchQuery) return;
 
@@ -51,9 +51,9 @@ export function TopBar() {
       });
       setPlateQuery("");
 
-      // Auto-speak summary for voice searches
-      if (query) {
-        await speakSummary("plate", data);
+      // Auto-speak summary for voice searches, passing the original query
+      if (fromVoice) {
+        await speakSummaryWithQuery("plate", data, searchQuery.toUpperCase());
       }
     } catch (err) {
       console.error("Plate search error:", err);
@@ -62,7 +62,7 @@ export function TopBar() {
     }
   };
 
-  const handlePersonSearch = async (query?: string) => {
+  const handlePersonSearch = async (query?: string, fromVoice = false) => {
     const searchQuery = query || personQuery.trim();
     if (!searchQuery) return;
 
@@ -81,9 +81,9 @@ export function TopBar() {
       });
       setPersonQuery("");
 
-      // Auto-speak summary for voice searches
-      if (query) {
-        await speakSummary("person", data);
+      // Auto-speak summary for voice searches, passing the original query
+      if (fromVoice) {
+        await speakSummaryWithQuery("person", data, searchQuery);
       }
     } catch (err) {
       console.error("Person search error:", err);
@@ -92,7 +92,7 @@ export function TopBar() {
     }
   };
 
-  const handlePhoneSearch = async (query: string) => {
+  const handlePhoneSearch = async (query: string, fromVoice = false) => {
     if (!query) return;
 
     setLoading(true);
@@ -109,7 +109,9 @@ export function TopBar() {
         data: data as unknown as undefined,
       });
 
-      await speakSummary("phone", data);
+      if (fromVoice) {
+        await speakSummaryWithQuery("phone", data, query);
+      }
     } catch (err) {
       console.error("Phone search error:", err);
     } finally {
@@ -117,7 +119,7 @@ export function TopBar() {
     }
   };
 
-  const handleAddressSearch = async (query: string) => {
+  const handleAddressSearch = async (query: string, fromVoice = false) => {
     if (!query) return;
 
     setLoading(true);
@@ -134,7 +136,9 @@ export function TopBar() {
         data: data as unknown as undefined,
       });
 
-      await speakSummary("address", data);
+      if (fromVoice) {
+        await speakSummaryWithQuery("address", data, query);
+      }
     } catch (err) {
       console.error("Address search error:", err);
     } finally {
@@ -152,22 +156,25 @@ export function TopBar() {
     }
 
     const type = activeTab.type.replace("-search", "");
-    await speakSummary(type, activeTab.data);
+    // Extract query from tab title
+    const query = activeTab.title.split(": ")[1] || "";
+    await speakSummaryWithQuery(type, activeTab.data, query);
   };
 
   const handleVoiceCommand = async (command: VoiceCommand) => {
     switch (command.action) {
       case "plate":
-        await handlePlateSearch(command.query);
+        await handlePlateSearch(command.query, true);
         break;
       case "person":
-        await handlePersonSearch(command.query);
+        // Pass the raw transcript for person so we get "Bob Smith 1-1-1980" not just parsed name
+        await handlePersonSearch(command.query || command.raw.replace(/^(run|check|search|find)\s*(person|name|subject)?\s*/i, '').trim(), true);
         break;
       case "phone":
-        await handlePhoneSearch(command.query);
+        await handlePhoneSearch(command.query, true);
         break;
       case "address":
-        await handleAddressSearch(command.query);
+        await handleAddressSearch(command.query, true);
         break;
       case "read":
         await handleReadCurrentAnalysis();

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
-// Define SpeechRecognition types inline to avoid TypeScript errors
+// Define SpeechRecognition types inline
 interface ISpeechRecognitionEvent {
   results: {
     length: number;
@@ -375,13 +375,18 @@ export async function speakText(text: string): Promise<void> {
   }
 }
 
-// Generate and speak a summary for alerts/searches
+// Generate and speak a summary for alerts/searches (without query)
 export async function speakSummary(type: string, data: unknown): Promise<void> {
+  return speakSummaryWithQuery(type, data, undefined);
+}
+
+// Generate and speak a summary WITH the original query (for echoing back what was said)
+export async function speakSummaryWithQuery(type: string, data: unknown, query?: string): Promise<void> {
   try {
     const response = await fetch("/api/voice/summarize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, data }),
+      body: JSON.stringify({ type, data, query }),
     });
 
     if (!response.ok) {
