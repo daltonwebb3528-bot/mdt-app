@@ -1,9 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { PlateSearchResult } from "@/lib/types";
-import { useTabStore } from "@/stores/tabStore";
 import type { PlateSearchResult, PersonSearchResult } from "@/lib/types";
+import { useTabStore } from "@/stores/tabStore";
 
 // Dynamically import map component to avoid SSR issues
 const LprHeatMap = dynamic(() => import("./LprHeatMap").then((mod) => mod.LprHeatMap), {
