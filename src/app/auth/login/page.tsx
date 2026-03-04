@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 const BEATS = [
   { id: "beat-1a", name: "Beat 1A - Downtown Core" },
@@ -21,14 +20,11 @@ const BEATS = [
 ];
 
 export default function LoginPage() {
-  const router = useRouter();
   const [unit, setUnit] = useState("");
   const [selectedBeats, setSelectedBeats] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleBeatToggle = (beatId: string) => {
     if (beatId === "citywide") {
-      // If citywide is selected, select all beats
       if (selectedBeats.includes("citywide")) {
         setSelectedBeats([]);
       } else {
@@ -53,16 +49,12 @@ export default function LoginPage() {
       return;
     }
 
-    setIsLoading(true);
-
     // Store in localStorage for the session
     localStorage.setItem("mdt_unit", unit.toUpperCase());
     localStorage.setItem("mdt_beats", JSON.stringify(selectedBeats));
 
-    // Redirect to main app
-    setTimeout(() => {
-      router.push("/");
-    }, 500);
+    // Use window.location for a full page redirect
+    window.location.href = "/";
   };
 
   return (
@@ -98,7 +90,6 @@ export default function LoginPage() {
                   viewBox="0 0 180 180"
                   className="text-black"
                 >
-                  {/* QR Code Pattern - Simplified representation */}
                   <rect width="180" height="180" fill="white" />
                   {/* Corner squares */}
                   <rect x="10" y="10" width="40" height="40" fill="black" />
@@ -263,39 +254,9 @@ export default function LoginPage() {
               {/* Start Button */}
               <button
                 onClick={handleStart}
-                disabled={isLoading}
-                className={`w-full py-4 rounded-lg font-bold text-lg transition-all ${
-                  isLoading
-                    ? "bg-mdt-muted text-mdt-bg cursor-not-allowed"
-                    : "bg-mdt-info text-white hover:bg-mdt-info/90 active:scale-[0.99]"
-                }`}
+                className="w-full py-4 rounded-lg font-bold text-lg transition-all bg-mdt-info text-white hover:bg-mdt-info/90 active:scale-[0.99]"
               >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg
-                      className="animate-spin h-5 w-5"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                    Starting MDT...
-                  </span>
-                ) : (
-                  "Start Shift"
-                )}
+                Start Shift
               </button>
             </div>
           </div>
