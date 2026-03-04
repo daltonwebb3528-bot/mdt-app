@@ -16,9 +16,10 @@ function initAlerts() {
 
 export async function GET() {
   initAlerts();
-  return NextResponse.json(alerts.sort((a, b) => 
+  const sortedAlerts = alerts.sort((a, b) => 
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  ));
+  );
+  return NextResponse.json({ alerts: sortedAlerts });
 }
 
 // Add new alert (can be called to simulate new alerts)
