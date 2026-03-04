@@ -2,6 +2,30 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
+// Define SpeechRecognition types inline to avoid TypeScript errors
+interface ISpeechRecognitionEvent {
+  results: {
+    length: number;
+    [index: number]: {
+      [index: number]: {
+        transcript: string;
+        confidence: number;
+      };
+    };
+  };
+}
+
+interface ISpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: ISpeechRecognitionEvent) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
 interface VoiceCommand {
   action: "plate" | "person" | "phone" | "address" | "read" | "analysis" | "unknown";
   query: string;
@@ -36,14 +60,14 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const wakeWordTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  const wakeWordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try { recognitionRef.current.stop(); } catch {}
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -186,23 +210,26 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
       return;
     }
 
-    const SpeechRecognitionAPI = (window as Window & { 
-      SpeechRecognition?: new () => SpeechRecognition;
-      webkitSpeechRecognition?: new () => SpeechRecognition;
-    }).SpeechRecognition || (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition;
+    // Get SpeechRecognition constructor
+    const windowAny = window as Window & { 
+      SpeechRecognition?: new () => ISpeechRecognition;
+      webkitSpeechRecognition?: new () => ISpeechRecognition;
+    };
+    
+    const SpeechRecognitionClass = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
 
-    if (!SpeechRecognitionAPI) {
+    if (!SpeechRecognitionClass) {
       setStatus("Speech not supported");
       setWakeWordMode(false);
       return;
     }
 
-    const recognition = new SpeechRecognitionAPI();
+    const recognition = new SpeechRecognitionClass();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: ISpeechRecognitionEvent) => {
       const last = event.results.length - 1;
       const transcript = event.results[last][0].transcript.toLowerCase();
       
@@ -222,7 +249,7 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
     };
 
     recognition.onerror = () => {
-      // Silently handle errors and restart
+      // Silently handle errors
     };
 
     recognition.onend = () => {
