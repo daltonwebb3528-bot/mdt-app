@@ -48,17 +48,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1a1f2e] flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl bg-[#242938] rounded-lg border border-[#2d3548] shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-[#38494c] flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl bg-[#38494c] rounded-lg border border-[#2d3548] shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-4 border-b border-[#2d3548]">
+        <div className="bg-[#337f6c] px-6 py-4 border-b border-[#2d3548]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
               <span className="text-2xl">🚔</span>
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Mobile Data Terminal</h1>
-              <p className="text-blue-200 text-sm">Flock Safety Integration Platform</p>
+              <p className="text-white/80 text-sm">Flock Safety Integration Platform</p>
             </div>
           </div>
         </div>
@@ -92,12 +92,12 @@ export default function LoginPage() {
               </div>
             </div>
             <h2 className="text-lg font-bold text-white mb-2">Link Your Location</h2>
-            <p className="text-[#64748b] text-sm text-center max-w-xs">
-              Scan this QR code with the <span className="text-[#22d3ee] font-semibold">Flock Mobile App</span> to share your live location with dispatch.
+            <p className="text-[#94a3b8] text-sm text-center max-w-xs">
+              Scan this QR code with the <span className="text-[#337f6c] font-semibold">Flock Mobile App</span> to share your live location with dispatch.
             </p>
-            <div className="mt-6 p-3 bg-[#1a1f2e] rounded-lg border border-[#2d3548]">
-              <div className="flex items-center gap-2 text-[#64748b] text-xs">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            <div className="mt-6 p-3 bg-[#414f64] rounded-lg border border-[#2d3548]">
+              <div className="flex items-center gap-2 text-[#94a3b8] text-xs">
+                <span className="w-2 h-2 bg-[#337f6c] rounded-full animate-pulse"></span>
                 <span>Waiting for mobile connection...</span>
               </div>
             </div>
@@ -116,7 +116,7 @@ export default function LoginPage() {
                   value={unit}
                   onChange={(e) => setUnit(e.target.value.toUpperCase())}
                   placeholder="e.g., 4A21, 2B15, M7"
-                  className="w-full px-4 py-3 bg-[#1a1f2e] border border-[#2d3548] rounded-lg text-white text-lg font-mono placeholder:text-[#64748b] focus:outline-none focus:border-[#22d3ee]"
+                  className="w-full px-4 py-3 bg-[#414f64] border border-[#2d3548] rounded-lg text-white text-lg font-mono placeholder:text-[#64748b] focus:outline-none focus:border-[#337f6c]"
                   maxLength={10}
                 />
               </div>
@@ -126,21 +126,21 @@ export default function LoginPage() {
                 <label className="block text-sm font-semibold text-white mb-2">
                   What areas do you want to receive alerts from?
                 </label>
-                <div className="bg-[#1a1f2e] border border-[#2d3548] rounded-lg p-3 max-h-64 overflow-y-auto">
+                <div className="bg-[#414f64] border border-[#2d3548] rounded-lg p-3 max-h-64 overflow-y-auto">
                   {BEATS.map((beat) => (
                     <label
                       key={beat.id}
                       className={`flex items-center gap-3 px-3 py-2 rounded cursor-pointer ${
                         selectedBeats.includes(beat.id)
-                          ? "bg-[#22d3ee]/20"
-                          : "hover:bg-[#242938]"
+                          ? "bg-[#337f6c]/30"
+                          : "hover:bg-[#38494c]"
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={selectedBeats.includes(beat.id)}
                         onChange={() => handleBeatToggle(beat.id)}
-                        className="w-4 h-4"
+                        className="w-4 h-4 accent-[#337f6c]"
                       />
                       <span className={`text-sm ${selectedBeats.includes(beat.id) ? "text-white" : "text-[#e2e8f0]"}`}>
                         {beat.name}
@@ -157,7 +157,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleStart}
-                className="w-full py-4 rounded-lg font-bold text-lg bg-[#22d3ee] text-black hover:bg-[#22d3ee]/90 active:scale-[0.99] transition-all"
+                className="w-full py-4 rounded-lg font-bold text-lg bg-[#337f6c] text-white hover:bg-[#337f6c]/90 active:scale-[0.99] transition-all"
               >
                 Start Shift
               </button>
@@ -166,7 +166,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="bg-[#1a1f2e] px-6 py-3 border-t border-[#2d3548] flex justify-between">
+        <div className="bg-[#414f64] px-6 py-3 border-t border-[#2d3548] flex justify-between">
           <p className="text-xs text-[#64748b]">MDT v1.0.0 • Proof of Concept</p>
           <p className="text-xs text-[#64748b]">© 2025 Flock Safety</p>
         </div>

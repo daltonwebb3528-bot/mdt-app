@@ -6,16 +6,18 @@ const config: Config = {
     extend: {
       colors: {
         mdt: {
-          bg: "#1a1f2e",
-          panel: "#242938",
+          bg: "#38494c",
+          panel: "#38494c",
           border: "#2d3548",
           text: "#e2e8f0",
           muted: "#64748b",
+          accent: "#337f6c",
+          selected: "#414f64",
           critical: "#ef4444",
           high: "#f97316",
           medium: "#eab308",
           low: "#22c55e",
-          info: "#22d3ee",
+          info: "#337f6c",
         },
       },
       fontSize: {
