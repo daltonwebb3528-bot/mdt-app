@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTabStore } from "@/stores/tabStore";
 import { useAlertStore } from "@/stores/alertStore";
-import type { PlateSearchResult } from "@/lib/types";
+import { VoiceControl, speakSummary } from "@/components/voice/VoiceControl";
+import type { PlateSearchResult, PersonSearchResult } from "@/lib/types";
 
 type OtherSearchType = "phone" | "address" | "ssn" | "vin";
+
+interface VoiceCommand {
+  action: "plate" | "person" | "phone" | "address" | "read" | "unknown";
+  query: string;
+  raw: string;
+}
 
 export function TopBar() {
   const [plateQuery, setPlateQuery] = useState("");
@@ -13,27 +20,41 @@ export function TopBar() {
   const [otherQuery, setOtherQuery] = useState("");
   const [otherType, setOtherType] = useState<OtherSearchType>("phone");
   const [loading, setLoading] = useState(false);
-  const { addTab } = useTabStore();
+  const [unit, setUnit] = useState("----");
+  const { addTab, tabs, activeTabId } = useTabStore();
   const { setSelectedAlert } = useAlertStore();
 
-  const handlePlateSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!plateQuery.trim()) return;
+  // Load unit from localStorage
+  useEffect(() => {
+    const savedUnit = localStorage.getItem("mdt_unit");
+    if (savedUnit) {
+      setUnit(savedUnit);
+    }
+  }, []);
+
+  const handlePlateSearch = async (query?: string) => {
+    const searchQuery = query || plateQuery.trim();
+    if (!searchQuery) return;
 
     setLoading(true);
     setSelectedAlert(null);
     
     try {
-      const res = await fetch(`/api/search/plate?q=${encodeURIComponent(plateQuery.trim())}`);
+      const res = await fetch(`/api/search/plate?q=${encodeURIComponent(searchQuery)}`);
       const data: PlateSearchResult = await res.json();
 
       addTab({
-        id: `plate-${plateQuery.trim().toUpperCase()}`,
+        id: `plate-${searchQuery.toUpperCase()}`,
         type: "plate-search",
-        title: `Plate: ${plateQuery.trim().toUpperCase()}`,
+        title: `Plate: ${searchQuery.toUpperCase()}`,
         data: data as unknown as undefined,
       });
       setPlateQuery("");
+
+      // Auto-speak summary for voice searches
+      if (query) {
+        await speakSummary("plate", data);
+      }
     } catch (err) {
       console.error("Plate search error:", err);
     } finally {
@@ -41,28 +62,119 @@ export function TopBar() {
     }
   };
 
-  const handlePersonSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!personQuery.trim()) return;
+  const handlePersonSearch = async (query?: string) => {
+    const searchQuery = query || personQuery.trim();
+    if (!searchQuery) return;
 
     setLoading(true);
     setSelectedAlert(null);
     
     try {
-      const res = await fetch(`/api/search/person?q=${encodeURIComponent(personQuery.trim())}`);
-      const data = await res.json();
+      const res = await fetch(`/api/search/person?q=${encodeURIComponent(searchQuery)}`);
+      const data: PersonSearchResult = await res.json();
 
       addTab({
         id: `person-${Date.now()}`,
         type: "person-search",
-        title: `Person: ${personQuery.trim()}`,
+        title: `Person: ${searchQuery}`,
         data: data as unknown as undefined,
       });
       setPersonQuery("");
+
+      // Auto-speak summary for voice searches
+      if (query) {
+        await speakSummary("person", data);
+      }
     } catch (err) {
       console.error("Person search error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePhoneSearch = async (query: string) => {
+    if (!query) return;
+
+    setLoading(true);
+    setSelectedAlert(null);
+    
+    try {
+      const res = await fetch(`/api/search/phone?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+
+      addTab({
+        id: `phone-${Date.now()}`,
+        type: "phone-search",
+        title: `Phone: ${query}`,
+        data: data as unknown as undefined,
+      });
+
+      await speakSummary("phone", data);
+    } catch (err) {
+      console.error("Phone search error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddressSearch = async (query: string) => {
+    if (!query) return;
+
+    setLoading(true);
+    setSelectedAlert(null);
+    
+    try {
+      const res = await fetch(`/api/search/address?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+
+      addTab({
+        id: `address-${Date.now()}`,
+        type: "address-search",
+        title: `Address: ${query}`,
+        data: data as unknown as undefined,
+      });
+
+      await speakSummary("address", data);
+    } catch (err) {
+      console.error("Address search error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReadCurrentAnalysis = async () => {
+    // Find the active tab and read its summary
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (!activeTab?.data) {
+      const { speakText } = await import("@/components/voice/VoiceControl");
+      await speakText("No active search results to read.");
+      return;
+    }
+
+    const type = activeTab.type.replace("-search", "");
+    await speakSummary(type, activeTab.data);
+  };
+
+  const handleVoiceCommand = async (command: VoiceCommand) => {
+    switch (command.action) {
+      case "plate":
+        await handlePlateSearch(command.query);
+        break;
+      case "person":
+        await handlePersonSearch(command.query);
+        break;
+      case "phone":
+        await handlePhoneSearch(command.query);
+        break;
+      case "address":
+        await handleAddressSearch(command.query);
+        break;
+      case "read":
+        await handleReadCurrentAnalysis();
+        break;
+      default:
+        const { speakText } = await import("@/components/voice/VoiceControl");
+        await speakText(`Sorry, I didn't understand: ${command.raw}`);
     }
   };
 
@@ -84,7 +196,6 @@ export function TopBar() {
         vin: "VIN",
       };
 
-      // SSN returns person results, VIN returns plate results, phone/address have their own
       const tabType = otherType === "ssn" ? "person-search" 
         : otherType === "vin" ? "plate-search"
         : otherType === "phone" ? "phone-search"
@@ -114,41 +225,47 @@ export function TopBar() {
   };
 
   return (
-    <div className="h-24 bg-mdt-panel border-b-2 border-mdt-border flex items-center px-6 gap-8">
+    <div className="h-24 bg-mdt-panel border-b-2 border-mdt-border flex items-center px-6 gap-6">
+      {/* Voice Control */}
+      <VoiceControl onCommand={handleVoiceCommand} />
+
+      {/* Divider */}
+      <div className="w-px h-12 bg-mdt-border" />
+
       {/* Plate Search */}
-      <form onSubmit={handlePlateSearch} className="flex items-center gap-3">
+      <form onSubmit={(e) => { e.preventDefault(); handlePlateSearch(); }} className="flex items-center gap-3">
         <label className="text-sm font-bold text-mdt-muted uppercase tracking-wide">Plate</label>
         <input
           type="text"
           value={plateQuery}
           onChange={(e) => setPlateQuery(e.target.value.toUpperCase())}
           placeholder="ABC1234"
-          className="w-44 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg font-mono font-bold focus:outline-none focus:border-mdt-info"
+          className="w-36 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg font-mono font-bold focus:outline-none focus:border-mdt-accent"
           maxLength={10}
         />
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 bg-mdt-info text-mdt-bg font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
+          className="px-5 py-3 bg-mdt-accent text-white font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
         >
           🔍
         </button>
       </form>
 
       {/* Person Search */}
-      <form onSubmit={handlePersonSearch} className="flex items-center gap-3">
+      <form onSubmit={(e) => { e.preventDefault(); handlePersonSearch(); }} className="flex items-center gap-3">
         <label className="text-sm font-bold text-mdt-muted uppercase tracking-wide">Person</label>
         <input
           type="text"
           value={personQuery}
           onChange={(e) => setPersonQuery(e.target.value)}
           placeholder="Name or DL#"
-          className="w-48 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg focus:outline-none focus:border-mdt-info"
+          className="w-40 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg focus:outline-none focus:border-mdt-accent"
         />
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 bg-mdt-info text-mdt-bg font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
+          className="px-5 py-3 bg-mdt-accent text-white font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
         >
           🔍
         </button>
@@ -159,7 +276,7 @@ export function TopBar() {
         <select
           value={otherType}
           onChange={(e) => setOtherType(e.target.value as OtherSearchType)}
-          className="px-3 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg font-bold text-mdt-info focus:outline-none focus:border-mdt-info cursor-pointer"
+          className="px-3 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg font-bold text-mdt-accent focus:outline-none focus:border-mdt-accent cursor-pointer"
         >
           <option value="phone">Phone</option>
           <option value="address">Address</option>
@@ -171,12 +288,12 @@ export function TopBar() {
           value={otherQuery}
           onChange={(e) => setOtherQuery(e.target.value)}
           placeholder={getPlaceholder()}
-          className="w-52 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg focus:outline-none focus:border-mdt-info"
+          className="w-44 px-4 py-3 bg-mdt-bg border-2 border-mdt-border rounded-xl text-lg focus:outline-none focus:border-mdt-accent"
         />
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 bg-mdt-info text-mdt-bg font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
+          className="px-5 py-3 bg-mdt-accent text-white font-bold rounded-xl text-lg hover:brightness-110 disabled:opacity-50"
         >
           🔍
         </button>
@@ -188,7 +305,7 @@ export function TopBar() {
       {/* Unit ID */}
       <div className="text-right">
         <span className="text-sm text-mdt-muted uppercase tracking-wide">Unit</span>
-        <p className="text-3xl font-bold text-mdt-info">4A21</p>
+        <p className="text-3xl font-bold text-mdt-accent">{unit}</p>
       </div>
     </div>
   );
