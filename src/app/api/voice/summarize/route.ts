@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 150,
+            maxOutputTokens: 200,
           },
         }),
       }
@@ -54,7 +54,25 @@ export async function POST(request: NextRequest) {
 }
 
 function buildPrompt(type: string, data: unknown): string {
-  const baseInstruction = `You are a police dispatch assistant. Generate a brief, spoken summary (2-3 sentences max) for an officer. Be direct and prioritize safety-critical information first. Use natural speech patterns. Do not use bullet points or formatting.`;
+  const baseInstruction = `You are a police dispatch assistant. Generate a brief, spoken summary (2-3 sentences max) for an officer. Be direct and prioritize safety-critical information first. Use natural speech patterns. Do not use bullet points or formatting. Speak as if you're talking on the radio.`;
+
+  if (type === "lpr") {
+    return `${baseInstruction}
+
+Summarize this LPR (License Plate Reader) hit for voice readback to an officer:
+${JSON.stringify(data, null, 2)}
+
+Focus on: vehicle status (stolen or clear), owner name, any warrants or flags (armed, dangerous, flight risk). Lead with critical safety info. Example: "Heads up, this plate comes back stolen. Registered owner is John Smith with an active felony warrant. He's flagged as armed and dangerous."`;
+  }
+
+  if (type === "cad") {
+    return `${baseInstruction}
+
+Summarize this CAD (Computer Aided Dispatch) call analysis for voice readback to an officer:
+${JSON.stringify(data, null, 2)}
+
+Focus on: call type, risk level, any residents with warrants or flags, history of violence at location. Example: "This is a domestic at 123 Main. High risk location with 12 prior calls. One resident has an active warrant and gang affiliation. Use caution on approach."`;
+  }
 
   if (type === "plate") {
     return `${baseInstruction}
@@ -74,24 +92,6 @@ ${JSON.stringify(data, null, 2)}
 Focus on: active warrants, flags (armed/dangerous, violence history), alerts. Lead with safety concerns.`;
   }
 
-  if (type === "phone") {
-    return `${baseInstruction}
-
-Summarize this phone search result for voice readback to an officer:
-${JSON.stringify(data, null, 2)}
-
-Focus on: registered owner, prior incidents, any red flags.`;
-  }
-
-  if (type === "address") {
-    return `${baseInstruction}
-
-Summarize this address search result for voice readback to an officer:
-${JSON.stringify(data, null, 2)}
-
-Focus on: officer safety alerts, prior calls, known residents with warrants.`;
-  }
-
   return `${baseInstruction}
 
 Summarize this information for voice readback:
@@ -99,6 +99,76 @@ ${JSON.stringify(data, null, 2)}`;
 }
 
 function generateTemplateSummary(type: string, data: Record<string, unknown>): string {
+  if (type === "lpr") {
+    const vehicleStatus = data.vehicleStatus as string;
+    const owner = data.owner as Record<string, unknown>;
+    const plate = data.plate as string;
+    
+    if (vehicleStatus === "STOLEN") {
+      const ownerName = owner?.name || "unknown";
+      const warrants = (owner?.warrants as Array<Record<string, string>>) || [];
+      const alerts = (owner?.alerts as string[]) || [];
+      
+      let summary = `Alert! Plate ${plate} comes back stolen.`;
+      
+      if (ownerName !== "unknown") {
+        summary += ` Registered to ${ownerName}.`;
+      }
+      
+      if (warrants.length > 0) {
+        summary += ` Active ${warrants[0].type} warrant for ${warrants[0].desc}.`;
+      }
+      
+      if (alerts.length > 0) {
+        summary += ` Flagged as ${alerts.join(" and ")}.`;
+      }
+      
+      summary += " Request backup before approach.";
+      return summary;
+    }
+    
+    return `Plate ${plate} comes back clear. Registered to ${owner?.name || "unknown owner"}. No warrants or alerts.`;
+  }
+
+  if (type === "cad") {
+    const callType = data.callType as string;
+    const location = data.location as string;
+    const riskLevel = data.riskLevel as string;
+    const priorCalls = data.priorCalls as number;
+    const highActivity = data.highActivity as boolean;
+    const residents = data.residents as Array<Record<string, unknown>> || [];
+    
+    let summary = `${callType} at ${location}.`;
+    
+    if (riskLevel === "CRITICAL" || riskLevel === "HIGH") {
+      summary += ` ${riskLevel} risk.`;
+    }
+    
+    if (highActivity && priorCalls > 5) {
+      summary += ` High activity location with ${priorCalls} prior calls this year.`;
+    }
+    
+    const flaggedResidents = residents.filter(r => ((r.flags as string[]) || []).length > 0);
+    if (flaggedResidents.length > 0) {
+      const flags = flaggedResidents.flatMap(r => r.flags as string[]);
+      if (flags.includes("Warrant")) {
+        summary += " One resident has an active warrant.";
+      }
+      if (flags.includes("Gang")) {
+        summary += " Gang affiliation noted.";
+      }
+      if (flags.includes("Prior DV")) {
+        summary += " History of domestic violence.";
+      }
+    }
+    
+    if (riskLevel === "CRITICAL" || riskLevel === "HIGH") {
+      summary += " Use caution on approach.";
+    }
+    
+    return summary;
+  }
+
   if (type === "plate") {
     const vehicle = data.vehicle as Record<string, unknown> | null;
     const owner = data.owner as Record<string, unknown> | null;
@@ -137,5 +207,5 @@ function generateTemplateSummary(type: string, data: Record<string, unknown>): s
     return `${name} comes back clear. No active warrants or alerts.`;
   }
 
-  return "Search complete. Check the screen for details.";
+  return "Analysis complete. Check the screen for details.";
 }

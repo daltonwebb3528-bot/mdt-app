@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Alert } from "@/lib/types";
 import { useTabStore } from "@/stores/tabStore";
 import { IncidentFeed } from "./IncidentFeed";
 import { RelatedPanel } from "./RelatedPanel";
+import { voiceEvents, speakSummary } from "@/components/voice/VoiceControl";
 
 interface CADDetailProps {
   alert: Alert;
@@ -53,6 +54,25 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
     { id: "2", author: "4A15", text: "10-97, staging one block north.", timestamp: new Date(Date.now() - 60000) },
   ];
 
+  const callerPhone = rawData.callerPhone as string || "480-555-1234";
+
+  // Store AI data in state to prevent regeneration
+  const [aiData, setAiData] = useState<{
+    calls: number;
+    high: boolean;
+    callerInfo: {
+      name: string;
+      dob: string;
+      address: string;
+      relationship: string;
+      priorCalls: number;
+      flags: string[];
+    };
+    residents: Array<{ name: string; dob: string; flags: string[] }>;
+    vehicles: Array<{ plate: string; desc: string; flags: string[] }>;
+    history: Array<{ date: string; type: string; disp: string }>;
+  } | null>(null);
+
   const search = (type: string, value: string) => {
     if (type === "plate") {
       fetch(`/api/search/plate?q=${encodeURIComponent(value)}`).then(r => r.json()).then(data => {
@@ -65,38 +85,70 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
     }
   };
 
-  const loadAi = () => { setAiLoading(true); setTimeout(() => { setAiLoading(false); setAiLoaded(true); }, 800); };
+  const loadAi = useCallback(() => {
+    if (aiLoading || aiLoaded) return;
+    
+    setAiLoading(true);
+    setTimeout(() => {
+      const calls = Math.floor(Math.random() * 12) + 2;
+      const high = Math.random() > 0.5;
+      
+      const ai = {
+        calls,
+        high,
+        callerInfo: {
+          name: "MARTINEZ, DIANA L",
+          dob: "03/18/1989",
+          address: "4521 E Oak St, Phoenix, AZ 85008",
+          relationship: "Caller / Possible Resident",
+          priorCalls: 3,
+          flags: Math.random() > 0.7 ? ["Mental Health History"] : [],
+        },
+        residents: [
+          { name: "GARCIA, ROBERTO", dob: "07/22/82", flags: ["Prior DV"] },
+          { name: "JOHNSON, TYLER", dob: "11/30/98", flags: ["Warrant", "Gang"] },
+          { name: "GARCIA, MARIA", dob: "03/15/85", flags: [] },
+        ].slice(0, 2 + Math.floor(Math.random() * 2)),
+        vehicles: [
+          { plate: "ABC1234", desc: "2020 Blk Honda Civic", flags: [] },
+          { plate: "XYZ9876", desc: "2019 Red Ford F150", flags: ["Stolen"] },
+        ].slice(0, 1 + Math.floor(Math.random() * 2)),
+        history: [
+          { date: "01/15", type: "DOMESTIC", disp: "Report" },
+          { date: "11/22", type: "ASSAULT", disp: "Arrest" },
+          { date: "09/08", type: "WELFARE", disp: "OK" },
+          { date: "07/14", type: "NOISE", disp: "GOA" },
+        ].slice(0, 2 + Math.floor(Math.random() * 3)),
+      };
+      
+      setAiData(ai);
+      setAiLoading(false);
+      setAiLoaded(true);
+      
+      // Speak summary after analysis completes
+      const summaryData = {
+        callType: alert.title,
+        location: alert.locationAddr,
+        riskLevel: risk.level,
+        priorCalls: ai.calls,
+        highActivity: ai.high,
+        residents: ai.residents,
+        callerName: ai.callerInfo.name,
+      };
+      speakSummary("cad", summaryData);
+      
+    }, 800);
+  }, [aiLoading, aiLoaded, alert.title, alert.locationAddr, risk.level]);
 
-  // Generate caller info based on phone number
-  const callerPhone = rawData.callerPhone as string || "480-555-1234";
-  const callerInfo = aiLoaded ? {
-    name: "MARTINEZ, DIANA L",
-    dob: "03/18/1989",
-    address: "4521 E Oak St, Phoenix, AZ 85008",
-    relationship: "Caller / Possible Resident",
-    priorCalls: 3,
-    flags: Math.random() > 0.7 ? ["Mental Health History"] : [],
-  } : null;
-
-  const ai = aiLoaded ? {
-    calls: Math.floor(Math.random() * 12) + 2,
-    high: Math.random() > 0.5,
-    residents: [
-      { name: "GARCIA, ROBERTO", dob: "07/22/82", flags: ["Prior DV"] },
-      { name: "JOHNSON, TYLER", dob: "11/30/98", flags: ["Warrant", "Gang"] },
-      { name: "GARCIA, MARIA", dob: "03/15/85", flags: [] },
-    ].slice(0, 2 + Math.floor(Math.random() * 2)),
-    vehicles: [
-      { plate: "ABC1234", desc: "2020 Blk Honda Civic", flags: [] },
-      { plate: "XYZ9876", desc: "2019 Red Ford F150", flags: ["Stolen"] },
-    ].slice(0, 1 + Math.floor(Math.random() * 2)),
-    history: [
-      { date: "01/15", type: "DOMESTIC", disp: "Report" },
-      { date: "11/22", type: "ASSAULT", disp: "Arrest" },
-      { date: "09/08", type: "WELFARE", disp: "OK" },
-      { date: "07/14", type: "NOISE", disp: "GOA" },
-    ].slice(0, 2 + Math.floor(Math.random() * 3)),
-  } : null;
+  // Listen for voice commands
+  useEffect(() => {
+    const unsubscribe = voiceEvents.on((command) => {
+      if (command === "run-analysis") {
+        loadAi();
+      }
+    });
+    return unsubscribe;
+  }, [loadAi]);
 
   return (
     <div className="h-full flex flex-col">
@@ -190,7 +242,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
           <div className="flex-1 overflow-y-auto p-2">
             {!aiLoaded && !aiLoading && (
               <div className="h-full flex items-center justify-center text-mdt-muted text-sm">
-                Click "Run Analysis" for caller info, address history, residents, vehicles
+                Click "Run Analysis" or say "Run Analysis" for caller info, address history, residents, vehicles
               </div>
             )}
             {aiLoading && (
@@ -198,32 +250,32 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
                 Analyzing...
               </div>
             )}
-            {aiLoaded && ai && (
+            {aiLoaded && aiData && (
               <div className="space-y-2">
                 {/* Summary */}
-                <div className={`rounded p-2 text-sm ${ai.high ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-bg"}`}>
-                  {ai.high ? `⚠️ HIGH ACTIVITY: ${ai.calls} calls/yr. Violence history.` : `${ai.calls} calls past year. Normal activity.`}
+                <div className={`rounded p-2 text-sm ${aiData.high ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-bg"}`}>
+                  {aiData.high ? `⚠️ HIGH ACTIVITY: ${aiData.calls} calls/yr. Violence history.` : `${aiData.calls} calls past year. Normal activity.`}
                 </div>
 
                 {/* Caller Phone Analysis */}
-                {callerInfo && (
+                {aiData.callerInfo && (
                   <div className="bg-mdt-info/10 border border-mdt-info/30 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] text-mdt-info font-bold">📞 CALLER ANALYSIS</p>
                       <span className="text-xs text-mdt-muted font-mono">{callerPhone}</span>
                     </div>
                     <button 
-                      onClick={() => search("person", callerInfo.name)} 
+                      onClick={() => search("person", aiData.callerInfo.name)} 
                       className="w-full flex items-center justify-between p-2 bg-mdt-panel rounded hover:bg-mdt-info/20 text-left mt-1"
                     >
                       <div>
-                        <p className="font-bold text-sm text-mdt-info">{callerInfo.name}</p>
-                        <p className="text-[10px] text-mdt-muted">DOB: {callerInfo.dob}</p>
-                        <p className="text-[10px] text-mdt-muted">{callerInfo.address}</p>
-                        <p className="text-[10px] text-mdt-info">{callerInfo.relationship} • {callerInfo.priorCalls} prior calls</p>
+                        <p className="font-bold text-sm text-mdt-info">{aiData.callerInfo.name}</p>
+                        <p className="text-[10px] text-mdt-muted">DOB: {aiData.callerInfo.dob}</p>
+                        <p className="text-[10px] text-mdt-muted">{aiData.callerInfo.address}</p>
+                        <p className="text-[10px] text-mdt-info">{aiData.callerInfo.relationship} • {aiData.callerInfo.priorCalls} prior calls</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        {callerInfo.flags.map((f, j) => (
+                        {aiData.callerInfo.flags.map((f, j) => (
                           <span key={j} className="px-1.5 text-[10px] bg-mdt-high/20 text-mdt-high rounded">{f}</span>
                         ))}
                         <span className="text-mdt-info text-lg">→</span>
@@ -236,7 +288,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">👥 RESIDENTS</p>
                   <div className="space-y-1">
-                    {ai.residents.map((r, i) => (
+                    {aiData.residents.map((r, i) => (
                       <button key={i} onClick={() => search("person", r.name)} className="w-full flex items-center justify-between p-1.5 bg-mdt-panel rounded hover:bg-mdt-info/20 text-left">
                         <div>
                           <p className="font-bold text-sm">{r.name}</p>
@@ -255,7 +307,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">🚗 VEHICLES</p>
                   <div className="space-y-1">
-                    {ai.vehicles.map((v, i) => (
+                    {aiData.vehicles.map((v, i) => (
                       <button key={i} onClick={() => search("plate", v.plate)} className="w-full flex items-center justify-between p-1.5 bg-mdt-panel rounded hover:bg-mdt-info/20 text-left">
                         <div>
                           <p className="font-mono font-bold text-mdt-info">{v.plate}</p>
@@ -274,7 +326,7 @@ export function CADDetail({ alert, isPreview = false }: CADDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">📋 PRIOR CALLS</p>
                   <div className="space-y-0.5">
-                    {ai.history.map((h, i) => (
+                    {aiData.history.map((h, i) => (
                       <div key={i} className="flex justify-between text-xs p-1 bg-mdt-panel rounded">
                         <span><span className="text-mdt-muted">{h.date}</span> {h.type}</span>
                         <span className="text-mdt-muted">{h.disp}</span>

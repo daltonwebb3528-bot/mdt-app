@@ -1,54 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-
-// Web Speech API types
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  length: number;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message?: string;
-}
-
-interface ISpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-interface IWindow extends Window {
-  SpeechRecognition?: new () => ISpeechRecognition;
-  webkitSpeechRecognition?: new () => ISpeechRecognition;
-}
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface VoiceCommand {
-  action: "plate" | "person" | "phone" | "address" | "read" | "unknown";
+  action: "plate" | "person" | "phone" | "address" | "read" | "analysis" | "unknown";
   query: string;
   raw: string;
 }
@@ -58,21 +13,60 @@ interface VoiceControlProps {
   onListeningChange?: (isListening: boolean) => void;
 }
 
+// Global event for triggering analysis from voice
+export const voiceEvents = {
+  listeners: [] as Array<(command: string) => void>,
+  emit(command: string) {
+    this.listeners.forEach(fn => fn(command));
+  },
+  on(fn: (command: string) => void) {
+    this.listeners.push(fn);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== fn);
+    };
+  }
+};
+
 export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps) {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isWakeWordActive, setIsWakeWordActive] = useState(false);
+  const [wakeWordMode, setWakeWordMode] = useState(false);
   const [status, setStatus] = useState<string>("");
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(true);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const wakeWordRecognitionRef = useRef<ISpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const wakeWordTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (wakeWordTimeoutRef.current) {
+        clearTimeout(wakeWordTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const startRecording = useCallback(async () => {
+    // Stop wake word listening while recording
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      });
       streamRef.current = stream;
       
       const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
@@ -96,18 +90,19 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
       mediaRecorder.start();
       setIsListening(true);
       onListeningChange?.(true);
-      setStatus("Listening...");
+      setStatus("🔴 Listening...");
 
+      // Auto-stop after 6 seconds
       setTimeout(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           stopRecording();
         }
-      }, 5000);
+      }, 6000);
 
     } catch (error) {
       console.error("Failed to start recording:", error);
-      setStatus("Mic access denied");
-      setIsWakeWordActive(false);
+      setStatus("❌ Mic access denied");
+      restartWakeWord();
     }
   }, [onListeningChange]);
 
@@ -117,12 +112,22 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
     }
     setIsListening(false);
     onListeningChange?.(false);
-    setIsWakeWordActive(false);
   }, [onListeningChange]);
+
+  const restartWakeWord = useCallback(() => {
+    if (wakeWordMode && recognitionRef.current) {
+      wakeWordTimeoutRef.current = setTimeout(() => {
+        try {
+          recognitionRef.current?.start();
+          setStatus("🎤 Say 'Hey Flocky'");
+        } catch {}
+      }, 500);
+    }
+  }, [wakeWordMode]);
 
   const processAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
-    setStatus("Processing...");
+    setStatus("⏳ Processing...");
 
     try {
       const formData = new FormData();
@@ -139,44 +144,60 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
 
       const data = await response.json();
       
-      if (data.command) {
-        setStatus(`Got it: ${data.command.action}`);
+      if (data.command && data.command.action !== "unknown") {
+        setStatus(`✓ ${data.command.action}: ${data.command.query || "triggered"}`);
+        
+        // Handle analysis command specially - emit event for alert components
+        if (data.command.action === "analysis") {
+          voiceEvents.emit("run-analysis");
+        }
+        
         onCommand(data.command);
+      } else if (data.transcript) {
+        setStatus(`? "${data.transcript.slice(0, 30)}..."`);
       } else {
         setStatus("Didn't catch that");
       }
     } catch (error) {
       console.error("Processing error:", error);
-      setStatus("Error processing");
+      setStatus("❌ Error");
     } finally {
       setIsProcessing(false);
       
+      // Return to wake word mode after a delay
       setTimeout(() => {
-        setStatus("");
-        if (wakeWordEnabled && wakeWordRecognitionRef.current) {
-          try {
-            wakeWordRecognitionRef.current.start();
-          } catch {
-            // Already running
-          }
+        if (wakeWordMode) {
+          restartWakeWord();
+        } else {
+          setStatus("");
         }
-      }, 2000);
+      }, 3000);
     }
   };
 
-  // Initialize wake word detection using Web Speech API
+  // Wake word listener
   useEffect(() => {
-    if (!wakeWordEnabled) return;
-    
-    const windowWithSpeech = window as IWindow;
-    const SpeechRecognitionClass = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
-    
-    if (!SpeechRecognitionClass) {
-      console.warn("Speech recognition not supported");
+    if (!wakeWordMode) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+      }
+      setStatus("");
       return;
     }
 
-    const recognition = new SpeechRecognitionClass();
+    const SpeechRecognitionAPI = (window as Window & { 
+      SpeechRecognition?: new () => SpeechRecognition;
+      webkitSpeechRecognition?: new () => SpeechRecognition;
+    }).SpeechRecognition || (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      setStatus("Speech not supported");
+      setWakeWordMode(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
@@ -185,114 +206,110 @@ export function VoiceControl({ onCommand, onListeningChange }: VoiceControlProps
       const last = event.results.length - 1;
       const transcript = event.results[last][0].transcript.toLowerCase();
       
-      if (transcript.includes("hey flocky") || transcript.includes("hey blocky") || transcript.includes("hey flock")) {
-        setIsWakeWordActive(true);
-        setStatus("Listening...");
-        recognition.stop();
+      // Check for wake word variations
+      if (
+        transcript.includes("hey flocky") || 
+        transcript.includes("hey blocky") || 
+        transcript.includes("hey flock") ||
+        transcript.includes("a flocky") ||
+        transcript.includes("hey rocky") ||
+        transcript.includes("hey flockey")
+      ) {
+        setStatus("🎤 Command?");
+        try { recognition.stop(); } catch {}
         startRecording();
       }
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== "no-speech") {
-        console.error("Wake word error:", event.error);
-      }
+    recognition.onerror = () => {
+      // Silently handle errors and restart
     };
 
     recognition.onend = () => {
-      if (wakeWordEnabled && !isListening && !isWakeWordActive) {
-        try {
-          recognition.start();
-        } catch {
-          // Already started
-        }
+      // Only restart if still in wake word mode and not recording/processing
+      if (wakeWordMode && !isListening && !isProcessing) {
+        wakeWordTimeoutRef.current = setTimeout(() => {
+          if (wakeWordMode && recognitionRef.current && !isListening && !isProcessing) {
+            try {
+              recognitionRef.current.start();
+            } catch {}
+          }
+        }, 300);
       }
     };
 
-    wakeWordRecognitionRef.current = recognition;
-    
+    recognitionRef.current = recognition;
+
     try {
       recognition.start();
+      setStatus("🎤 Say 'Hey Flocky'");
     } catch (e) {
-      console.error("Failed to start wake word detection:", e);
+      console.error("Failed to start recognition:", e);
     }
 
     return () => {
-      recognition.stop();
+      if (wakeWordTimeoutRef.current) {
+        clearTimeout(wakeWordTimeoutRef.current);
+      }
+      try { recognition.stop(); } catch {}
     };
-  }, [wakeWordEnabled, isListening, isWakeWordActive, startRecording]);
+  }, [wakeWordMode, isListening, isProcessing, startRecording]);
 
   const handleMicClick = () => {
     if (isListening) {
       stopRecording();
     } else {
-      wakeWordRecognitionRef.current?.stop();
       startRecording();
     }
   };
 
   const toggleWakeWord = () => {
-    setWakeWordEnabled(!wakeWordEnabled);
-    if (wakeWordEnabled) {
-      wakeWordRecognitionRef.current?.stop();
-    }
+    setWakeWordMode(prev => !prev);
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       {/* Wake word toggle */}
       <button
         onClick={toggleWakeWord}
-        className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-          wakeWordEnabled
-            ? "bg-[#337f6c]/20 text-[#337f6c] border border-[#337f6c]"
-            : "bg-[#414f64] text-[#64748b] border border-[#2d3548]"
+        className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+          wakeWordMode
+            ? "bg-[#337f6c] text-white"
+            : "bg-[#414f64] text-[#94a3b8] border border-[#2d3548] hover:bg-[#4a5568]"
         }`}
-        title={wakeWordEnabled ? 'Say "Hey Flocky" to activate' : "Wake word disabled"}
+        title={wakeWordMode ? 'Listening for "Hey Flocky"' : "Click to enable wake word"}
       >
-        {wakeWordEnabled ? "🎤 Hey Flocky" : "🎤 Off"}
+        {wakeWordMode ? "🎤 Hey Flocky: ON" : "🎤 Hey Flocky: OFF"}
       </button>
 
-      {/* Mic button */}
+      {/* Manual mic button */}
       <button
         onClick={handleMicClick}
         disabled={isProcessing}
-        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
           isListening
-            ? "bg-[#ef4444] animate-pulse"
+            ? "bg-[#ef4444] animate-pulse scale-110"
             : isProcessing
-            ? "bg-[#414f64]"
-            : "bg-[#337f6c] hover:bg-[#337f6c]/80"
+            ? "bg-[#414f64] cursor-wait"
+            : "bg-[#337f6c] hover:bg-[#2d6b5a] hover:scale-105"
         }`}
-        title={isListening ? "Stop listening" : "Start voice command"}
+        title={isListening ? "Click to stop" : "Click to speak command"}
       >
         {isProcessing ? (
           <svg className="w-6 h-6 animate-spin text-white" viewBox="0 0 24 24">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         ) : isListening ? (
-          <span className="text-white text-xl">⏹</span>
+          <span className="text-white text-2xl">⏹</span>
         ) : (
-          <span className="text-white text-xl">🎤</span>
+          <span className="text-white text-2xl">🎤</span>
         )}
       </button>
 
       {/* Status indicator */}
       {status && (
-        <span className="text-sm text-[#64748b] min-w-[100px]">{status}</span>
+        <span className="text-sm text-[#94a3b8] min-w-[120px]">{status}</span>
       )}
     </div>
   );
@@ -331,7 +348,7 @@ export async function speakText(text: string): Promise<void> {
   }
 }
 
-// Generate and speak a summary
+// Generate and speak a summary for alerts/searches
 export async function speakSummary(type: string, data: unknown): Promise<void> {
   try {
     const response = await fetch("/api/voice/summarize", {

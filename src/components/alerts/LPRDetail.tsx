@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Alert } from "@/lib/types";
 import { useTabStore } from "@/stores/tabStore";
 import { IncidentFeed } from "./IncidentFeed";
 import { RelatedPanel } from "./RelatedPanel";
+import { voiceEvents, speakSummary } from "@/components/voice/VoiceControl";
 
 interface LPRDetailProps {
   alert: Alert;
@@ -26,7 +27,119 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
   const isStolen = alert.title.includes("STOLEN");
   const isWanted = alert.title.includes("WANTED");
 
-  const loadAi = () => { setAiLoading(true); setTimeout(() => { setAiLoading(false); setAiLoaded(true); }, 1200); };
+  // Generate hotlist data based on alert
+  const hotlistData = {
+    source: "Custom Hotlist",
+    hotlistName: isStolen ? "Law Enforcement Demo Scenarios" : "Regional BOLO List",
+    reason: isStolen ? "Stolen Vehicle" : isWanted ? "Wanted Person Associated" : "Routine Read",
+    notes: isStolen ? "Confirm with dispatch before approach" : "No notes",
+    state: "AZ",
+    plate: rawData.plate || "UNKNOWN",
+    body: ["Sedan", "Pickup", "SUV", "Coupe"][Math.floor(Math.random() * 4)],
+    make: ["Toyota", "Honda", "Ford", "Chevrolet", "Nissan"][Math.floor(Math.random() * 5)],
+    color: ["Black", "White", "Red", "Silver", "Blue"][Math.floor(Math.random() * 5)],
+    agencyName: "Phoenix PD - District 4",
+    device: rawData.camera || "Mobile LPR Unit",
+    location: alert.locationAddr,
+    network: "Phoenix Metro LPR Network",
+    caseNumber: isStolen ? `24-${100000 + Math.floor(Math.random() * 900000)}` : "N/A",
+    timestamp: new Date(alert.createdAt).toLocaleString(),
+  };
+
+  // AI Analysis data - memoize to prevent regeneration
+  const [aiData, setAiData] = useState<{
+    ncic: {
+      vehicleStatus: string;
+      stolenDate: string | null;
+      stolenLocation: string | null;
+      registration: string;
+      insurance: string;
+      title: string;
+      liens: string;
+    };
+    owner: {
+      name: string;
+      dob: string;
+      dl: string;
+      address: string;
+      warrants: Array<{ type: string; desc: string; date: string }>;
+      alerts: string[];
+      priors: string[];
+    };
+    rmsHistory: Array<{ date: string; type: string; unit: string; disp: string; case: string }>;
+    lprHistory: Array<{ date: string; time: string; location: string; camera: string | undefined }>;
+    associates: Array<{ name: string; relation: string; flags: string[] }>;
+  } | null>(null);
+
+  const loadAi = useCallback(() => {
+    if (aiLoading || aiLoaded) return;
+    
+    setAiLoading(true);
+    setTimeout(() => {
+      const ai = {
+        ncic: {
+          vehicleStatus: isStolen ? "STOLEN" : "CLEAR",
+          stolenDate: isStolen ? "02/01/2024" : null,
+          stolenLocation: isStolen ? "4500 E Camelback Rd, Phoenix" : null,
+          registration: "VALID - Expires 08/2025",
+          insurance: "ACTIVE - State Farm",
+          title: "CLEAR",
+          liens: "NONE",
+        },
+        owner: {
+          name: "JOHNSON, MICHAEL T",
+          dob: "07/15/1985",
+          dl: "D12345678",
+          address: "1234 W Oak St, Phoenix, AZ 85015",
+          warrants: isStolen ? [{ type: "FELONY", desc: "Failure to Appear - Burglary", date: "01/20/2024" }] : [],
+          alerts: isStolen ? ["ARMED AND DANGEROUS", "FLIGHT RISK"] : [],
+          priors: isStolen ? ["Burglary (2022)", "Auto Theft (2019)", "Assault (2018)"] : ["Traffic (2023)"],
+        },
+        rmsHistory: [
+          { date: "02/15/24", type: "Traffic Stop", unit: "4A15", disp: "Citation", case: "24-023456" },
+          { date: "01/28/24", type: "Field Interview", unit: "4B22", disp: "FI Card", case: "24-018234" },
+          { date: "12/10/23", type: "Suspicious Vehicle", unit: "4A21", disp: "GOA", case: "23-145678" },
+          { date: "11/05/23", type: "Traffic Stop", unit: "3C14", disp: "Warning", case: "23-132456" },
+        ],
+        lprHistory: [
+          { date: "Today", time: new Date(alert.createdAt).toLocaleTimeString(), location: alert.locationAddr, camera: rawData.camera },
+          { date: "02/23/24", time: "14:32", location: "N Scottsdale Rd & E Shea Blvd", camera: "Fixed - Intersection" },
+          { date: "02/20/24", time: "09:15", location: "E Camelback Rd & N 24th St", camera: "Mobile Unit" },
+          { date: "02/18/24", time: "22:47", location: "W Indian School Rd & N 7th Ave", camera: "Fixed - Parking" },
+        ],
+        associates: [
+          { name: "JOHNSON, SARAH M", relation: "Spouse", flags: [] },
+          { name: "WILLIAMS, DEREK J", relation: "Known Associate", flags: ["Gang Affiliated"] },
+          { name: "GARCIA, MARIA L", relation: "Relative", flags: [] },
+        ],
+      };
+      
+      setAiData(ai);
+      setAiLoading(false);
+      setAiLoaded(true);
+      
+      // Speak summary after analysis completes
+      const summaryData = {
+        plate: rawData.plate,
+        vehicleStatus: ai.ncic.vehicleStatus,
+        owner: ai.owner,
+        hotlistReason: hotlistData.reason,
+        vehicle: `${hotlistData.color} ${hotlistData.make} ${hotlistData.body}`,
+      };
+      speakSummary("lpr", summaryData);
+      
+    }, 1200);
+  }, [aiLoading, aiLoaded, isStolen, alert.createdAt, alert.locationAddr, rawData.camera, rawData.plate, hotlistData.reason, hotlistData.color, hotlistData.make, hotlistData.body]);
+
+  // Listen for voice commands
+  useEffect(() => {
+    const unsubscribe = voiceEvents.on((command) => {
+      if (command === "run-analysis") {
+        loadAi();
+      }
+    });
+    return unsubscribe;
+  }, [loadAi]);
 
   const searchPerson = (name: string) => {
     fetch(`/api/search/person?q=${encodeURIComponent(name)}`)
@@ -53,64 +166,6 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
         });
       });
   };
-
-  // Generate hotlist data based on alert
-  const hotlistData = {
-    source: "Custom Hotlist",
-    hotlistName: isStolen ? "Law Enforcement Demo Scenarios" : "Regional BOLO List",
-    reason: isStolen ? "Stolen Vehicle" : isWanted ? "Wanted Person Associated" : "Routine Read",
-    notes: isStolen ? "Confirm with dispatch before approach" : "No notes",
-    state: "AZ",
-    plate: rawData.plate || "UNKNOWN",
-    body: ["Sedan", "Pickup", "SUV", "Coupe"][Math.floor(Math.random() * 4)],
-    make: ["Toyota", "Honda", "Ford", "Chevrolet", "Nissan"][Math.floor(Math.random() * 5)],
-    color: ["Black", "White", "Red", "Silver", "Blue"][Math.floor(Math.random() * 5)],
-    agencyName: "Phoenix PD - District 4",
-    device: rawData.camera || "Mobile LPR Unit",
-    location: alert.locationAddr,
-    network: "Phoenix Metro LPR Network",
-    caseNumber: isStolen ? `24-${100000 + Math.floor(Math.random() * 900000)}` : "N/A",
-    timestamp: new Date(alert.createdAt).toLocaleString(),
-  };
-
-  // AI Analysis data
-  const ai = aiLoaded ? {
-    ncic: {
-      vehicleStatus: isStolen ? "STOLEN" : "CLEAR",
-      stolenDate: isStolen ? "02/01/2024" : null,
-      stolenLocation: isStolen ? "4500 E Camelback Rd, Phoenix" : null,
-      registration: "VALID - Expires 08/2025",
-      insurance: "ACTIVE - State Farm",
-      title: "CLEAR",
-      liens: "NONE",
-    },
-    owner: {
-      name: "JOHNSON, MICHAEL T",
-      dob: "07/15/1985",
-      dl: "D12345678",
-      address: "1234 W Oak St, Phoenix, AZ 85015",
-      warrants: isStolen ? [{ type: "FELONY", desc: "Failure to Appear - Burglary", date: "01/20/2024" }] : [],
-      alerts: isStolen ? ["ARMED AND DANGEROUS", "FLIGHT RISK"] : [],
-      priors: isStolen ? ["Burglary (2022)", "Auto Theft (2019)", "Assault (2018)"] : ["Traffic (2023)"],
-    },
-    rmsHistory: [
-      { date: "02/15/24", type: "Traffic Stop", unit: "4A15", disp: "Citation", case: "24-023456" },
-      { date: "01/28/24", type: "Field Interview", unit: "4B22", disp: "FI Card", case: "24-018234" },
-      { date: "12/10/23", type: "Suspicious Vehicle", unit: "4A21", disp: "GOA", case: "23-145678" },
-      { date: "11/05/23", type: "Traffic Stop", unit: "3C14", disp: "Warning", case: "23-132456" },
-    ],
-    lprHistory: [
-      { date: "Today", time: new Date(alert.createdAt).toLocaleTimeString(), location: alert.locationAddr, camera: rawData.camera },
-      { date: "02/23/24", time: "14:32", location: "N Scottsdale Rd & E Shea Blvd", camera: "Fixed - Intersection" },
-      { date: "02/20/24", time: "09:15", location: "E Camelback Rd & N 24th St", camera: "Mobile Unit" },
-      { date: "02/18/24", time: "22:47", location: "W Indian School Rd & N 7th Ave", camera: "Fixed - Parking" },
-    ],
-    associates: [
-      { name: "JOHNSON, SARAH M", relation: "Spouse", flags: [] },
-      { name: "WILLIAMS, DEREK J", relation: "Known Associate", flags: ["Gang Affiliated"] },
-      { name: "GARCIA, MARIA L", relation: "Relative", flags: [] },
-    ],
-  } : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -200,60 +255,60 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
           <div className="flex-1 overflow-y-auto p-2">
             {!aiLoaded && !aiLoading && (
               <div className="h-full flex items-center justify-center text-mdt-muted text-xs text-center p-2">
-                Click "Run NCIC" for vehicle status, registration, owner info, and associated persons
+                Click "Run NCIC" or say "Run Analysis" for vehicle status, registration, owner info, and associated persons
               </div>
             )}
             {aiLoading && (
               <div className="h-full flex items-center justify-center text-mdt-info animate-pulse text-sm">Querying systems...</div>
             )}
-            {aiLoaded && ai && (
+            {aiLoaded && aiData && (
               <div className="space-y-2">
                 {/* NCIC Return */}
-                <div className={`rounded p-2 ${ai.ncic.vehicleStatus === "STOLEN" ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-low/20 border border-mdt-low"}`}>
+                <div className={`rounded p-2 ${aiData.ncic.vehicleStatus === "STOLEN" ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-low/20 border border-mdt-low"}`}>
                   <p className="text-[10px] text-mdt-muted mb-1">🚨 NCIC RETURN</p>
                   <div className="space-y-0.5">
                     <div className="flex justify-between text-xs">
                       <span>Vehicle Status</span>
-                      <span className={`font-bold ${ai.ncic.vehicleStatus === "STOLEN" ? "text-mdt-critical" : "text-mdt-low"}`}>{ai.ncic.vehicleStatus}</span>
+                      <span className={`font-bold ${aiData.ncic.vehicleStatus === "STOLEN" ? "text-mdt-critical" : "text-mdt-low"}`}>{aiData.ncic.vehicleStatus}</span>
                     </div>
-                    {ai.ncic.stolenDate && (
+                    {aiData.ncic.stolenDate && (
                       <>
                         <div className="flex justify-between text-xs">
                           <span>Stolen Date</span>
-                          <span className="text-mdt-critical">{ai.ncic.stolenDate}</span>
+                          <span className="text-mdt-critical">{aiData.ncic.stolenDate}</span>
                         </div>
-                        <div className="text-xs text-mdt-muted">From: {ai.ncic.stolenLocation}</div>
+                        <div className="text-xs text-mdt-muted">From: {aiData.ncic.stolenLocation}</div>
                       </>
                     )}
                     <div className="flex justify-between text-xs">
                       <span>Registration</span>
-                      <span className="text-mdt-low">{ai.ncic.registration}</span>
+                      <span className="text-mdt-low">{aiData.ncic.registration}</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span>Insurance</span>
-                      <span className="text-mdt-low">{ai.ncic.insurance}</span>
+                      <span className="text-mdt-low">{aiData.ncic.insurance}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Owner */}
-                <div className={`rounded p-2 ${ai.owner.warrants.length > 0 ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-bg"}`}>
+                <div className={`rounded p-2 ${aiData.owner.warrants.length > 0 ? "bg-mdt-critical/20 border border-mdt-critical" : "bg-mdt-bg"}`}>
                   <p className="text-[10px] text-mdt-muted mb-1">👤 REGISTERED OWNER</p>
-                  <button onClick={() => searchPerson(ai.owner.name)} className="w-full text-left hover:bg-mdt-info/20 rounded p-1 -m-1">
-                    <p className="font-bold text-sm text-mdt-info">{ai.owner.name} →</p>
-                    <p className="text-[10px] text-mdt-muted">DOB: {ai.owner.dob} | DL: {ai.owner.dl}</p>
+                  <button onClick={() => searchPerson(aiData.owner.name)} className="w-full text-left hover:bg-mdt-info/20 rounded p-1 -m-1">
+                    <p className="font-bold text-sm text-mdt-info">{aiData.owner.name} →</p>
+                    <p className="text-[10px] text-mdt-muted">DOB: {aiData.owner.dob} | DL: {aiData.owner.dl}</p>
                   </button>
-                  {ai.owner.warrants.length > 0 && (
+                  {aiData.owner.warrants.length > 0 && (
                     <div className="mt-1 p-1 bg-mdt-critical/30 rounded">
                       <p className="text-[10px] text-mdt-critical font-bold">⚠️ WARRANTS</p>
-                      {ai.owner.warrants.map((w, i) => (
+                      {aiData.owner.warrants.map((w, i) => (
                         <p key={i} className="text-xs">{w.type}: {w.desc}</p>
                       ))}
                     </div>
                   )}
-                  {ai.owner.alerts.length > 0 && (
+                  {aiData.owner.alerts.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {ai.owner.alerts.map((a, i) => (
+                      {aiData.owner.alerts.map((a, i) => (
                         <span key={i} className="px-1 py-0.5 text-[10px] bg-mdt-high text-black rounded font-bold">{a}</span>
                       ))}
                     </div>
@@ -264,7 +319,7 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">📋 RMS VEHICLE HISTORY</p>
                   <div className="space-y-0.5">
-                    {ai.rmsHistory.map((h, i) => (
+                    {aiData.rmsHistory.map((h, i) => (
                       <div key={i} className="flex justify-between text-[10px] p-0.5 bg-mdt-panel rounded">
                         <span><span className="text-mdt-muted">{h.date}</span> {h.type}</span>
                         <span className="text-mdt-muted">{h.disp}</span>
@@ -277,7 +332,7 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">📍 LPR HISTORY</p>
                   <div className="space-y-0.5">
-                    {ai.lprHistory.map((h, i) => (
+                    {aiData.lprHistory.map((h, i) => (
                       <div key={i} className="text-[10px] p-0.5 bg-mdt-panel rounded">
                         <div className="flex justify-between">
                           <span className="text-mdt-muted">{h.date} {h.time}</span>
@@ -293,7 +348,7 @@ export function LPRDetail({ alert, isPreview = false }: LPRDetailProps) {
                 <div className="bg-mdt-bg rounded p-2">
                   <p className="text-[10px] text-mdt-muted mb-1">👥 ASSOCIATED PERSONS</p>
                   <div className="space-y-0.5">
-                    {ai.associates.map((a, i) => (
+                    {aiData.associates.map((a, i) => (
                       <button key={i} onClick={() => searchPerson(a.name)} className="w-full flex justify-between items-center text-xs p-1 bg-mdt-panel rounded hover:bg-mdt-info/20 text-left">
                         <div>
                           <span className="text-mdt-info font-semibold">{a.name}</span>

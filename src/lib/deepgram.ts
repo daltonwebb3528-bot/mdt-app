@@ -8,7 +8,7 @@ export interface TranscriptionResult {
 }
 
 export interface VoiceCommand {
-  action: "plate" | "person" | "phone" | "address" | "read" | "unknown";
+  action: "plate" | "person" | "phone" | "address" | "read" | "analysis" | "unknown";
   query: string;
   raw: string;
 }
@@ -16,6 +16,24 @@ export interface VoiceCommand {
 // Parse natural language into a command
 export function parseVoiceCommand(transcript: string): VoiceCommand {
   const text = transcript.toLowerCase().trim();
+  
+  // Run analysis commands - check these first
+  const analysisPatterns = [
+    /run\s*(?:the\s*)?analysis/i,
+    /run\s*(?:the\s*)?ncic/i,
+    /analyze\s*(?:this|the|it)?/i,
+    /start\s*analysis/i,
+    /do\s*(?:the\s*)?analysis/i,
+    /get\s*(?:the\s*)?analysis/i,
+    /check\s*(?:the\s*)?ncic/i,
+    /pull\s*(?:the\s*)?ncic/i,
+  ];
+  
+  for (const pattern of analysisPatterns) {
+    if (pattern.test(text)) {
+      return { action: "analysis", query: "", raw: transcript };
+    }
+  }
   
   // Plate commands
   const platePatterns = [
@@ -81,6 +99,7 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
   const readPatterns = [
     /(?:read|speak|say|tell me)\s*(?:the\s*)?(?:analysis|summary|results|details)/i,
     /(?:what do we have|what's the info|give me the rundown)/i,
+    /(?:read it back|summarize)/i,
   ];
   
   for (const pattern of readPatterns) {
