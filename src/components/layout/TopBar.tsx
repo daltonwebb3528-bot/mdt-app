@@ -3,13 +3,13 @@
 import { useState, useEffect } from "react";
 import { useTabStore } from "@/stores/tabStore";
 import { useAlertStore } from "@/stores/alertStore";
-import { VoiceControl, speakSummary } from "@/components/voice/VoiceControl";
+import { VoiceControl, speakSummary, voiceEvents } from "@/components/voice/VoiceControl";
 import type { PlateSearchResult, PersonSearchResult } from "@/lib/types";
 
 type OtherSearchType = "phone" | "address" | "ssn" | "vin";
 
 interface VoiceCommand {
-  action: "plate" | "person" | "phone" | "address" | "read" | "unknown";
+  action: "plate" | "person" | "phone" | "address" | "read" | "analysis" | "unknown";
   query: string;
   raw: string;
 }
@@ -171,6 +171,10 @@ export function TopBar() {
         break;
       case "read":
         await handleReadCurrentAnalysis();
+        break;
+      case "analysis":
+        // Emit event for alert components to handle
+        voiceEvents.emit("run-analysis");
         break;
       default:
         const { speakText } = await import("@/components/voice/VoiceControl");
